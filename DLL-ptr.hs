@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, DeriveGeneric, FlexibleInstances, ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell, DeriveGeneric, ViewPatterns #-}
 
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
@@ -42,7 +42,7 @@ singletonDLL a =
   in DLL nullPtr a ptr nullPtr
 
 consDLL :: Int -> DLL -> DLL
-consDLL e l = 
+consDLL e (firstElem -> l) = 
   let ptr :: Ptr DLL
       ptr = unsafePerformIO malloc
       dll = DLL nullPtr e ptr (_thisPtr l) 
@@ -51,11 +51,10 @@ consDLL e l =
   in  mem `seq` newNext `seq` dll 
 
 snocDLL :: DLL -> Int -> DLL
-snocDLL l e =
+snocDLL (lastElem -> l) e =
   let ptr :: Ptr DLL
       ptr = unsafePerformIO malloc
-      nd = lastElem l
-      dll = DLL (_thisPtr nd) e ptr nullPtr
+      dll = DLL (_thisPtr l) e ptr nullPtr
       mem = unsafePerformIO (poke ptr dll)
-      newPrev = unsafePerformIO $ poke (_thisPtr nd) (forw .~ ptr $ nd)
+      newPrev = unsafePerformIO $ poke (_thisPtr l) (forw .~ ptr $ l)
   in  mem `seq` newPrev `seq` dll
