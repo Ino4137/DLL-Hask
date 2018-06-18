@@ -8,53 +8,57 @@ import Control.Lens
 import System.IO.Unsafe
 import Generics.Deriving
 
-data DLL = DLL { 
-    _backw :: Ptr DLL, 
-    _this :: Int, 
-    _thisPtr :: Ptr DLL,
-    _forw :: Ptr DLL
+data DLL a = DLL { 
+    _backw :: Ptr (DLL a), 
+    _this :: Ptr a, 
+    _thisPtr :: Ptr (DLL a),
+    _forw :: Ptr (DLL a)
   } deriving Generic
 
-firstElem :: DLL -> DLL
+firstElem :: Storable a => DLL a -> DLL a  
 firstElem nd = if _backw nd /= nullPtr then 
     firstElem $ unsafePerformIO (peek $ _backw nd) 
   else nd
 
-lastElem :: DLL -> DLL
+lastElem :: Storable a => DLL a -> DLL a
 lastElem nd = if _forw nd /= nullPtr then 
     lastElem $ unsafePerformIO (peek $ _forw nd) 
   else nd
   
-instance Show DLL where
+instance (Storable a, Show a) => Show (DLL a) where
   show l = 
-    let accumEls :: DLL -> [Int]
+    let accumEls :: Storable a => DLL a -> [a]
         accumEls e 
-          |  _forw e == nullPtr = _this e : []
-          | otherwise = _this e : accumEls (unsafePerformIO (peek $ _forw e))
+          |  _forw e == nullPtr = unsafePerformIO (peek $ _this e) : []
+          | otherwise = unsafePerformIO (peek $ _this e) : accumEls (unsafePerformIO (peek $ _forw e))
     in show $ accumEls (firstElem l)    
 
 makeLenses ''DLL
-instance GStorable DLL
+instance Storable a => GStorable (DLL a)
 
-singletonDLL :: Int -> DLL
+singletonDLL :: Storable a => a -> DLL a
 singletonDLL a = 
   let ptr = unsafePerformIO malloc 
-  in DLL nullPtr a ptr nullPtr
+      pval = unsafePerformIO malloc
+      val = unsafePerformIO (poke pval a)
+  in  ptr `seq` val `seq` DLL nullPtr pval ptr nullPtr
 
-consDLL :: Int -> DLL -> DLL
+consDLL :: Storable a => a -> DLL a -> DLL a 
 consDLL e (firstElem -> l) = 
-  let ptr :: Ptr DLL
-      ptr = unsafePerformIO malloc
-      dll = DLL nullPtr e ptr (_thisPtr l) 
+  let ptr = unsafePerformIO malloc
+      pval = unsafePerformIO malloc
+      val = unsafePerformIO (poke pval e)
+      dll = DLL nullPtr pval ptr (_thisPtr l) 
       mem = unsafePerformIO (poke ptr dll)
       newNext = unsafePerformIO $ poke (_thisPtr l) (backw .~ ptr $ l)
-  in  mem `seq` newNext `seq` dll 
+  in  val `seq` mem `seq` newNext `seq` dll 
 
-snocDLL :: DLL -> Int -> DLL
-snocDLL (lastElem -> l) e =
-  let ptr :: Ptr DLL
-      ptr = unsafePerformIO malloc
-      dll = DLL (_thisPtr l) e ptr nullPtr
+snocDLL :: Storable a => DLL a -> a -> DLL a
+snocDLL (lastElem -> nd) e =
+  let ptr = unsafePerformIO malloc
+      pval = unsafePerformIO malloc
+      val = unsafePerformIO (poke pval e)
+      dll = DLL (_thisPtr nd) pval ptr nullPtr
       mem = unsafePerformIO (poke ptr dll)
-      newPrev = unsafePerformIO $ poke (_thisPtr l) (forw .~ ptr $ l)
-  in  mem `seq` newPrev `seq` dll
+      newPrev = unsafePerformIO $ poke (_thisPtr nd) (forw .~ ptr $ nd)
+  in  val `seq` mem `seq` newPrev `seq` dll
